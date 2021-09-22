@@ -7,9 +7,9 @@ class V1::ApiController < ApplicationController
 	rescue_from Error::GoogleApiError, with: :render_server_unavailable
 	rescue_from Error::RequestParamsError, with: :render_bad_params
 
+	# TODO dockerize the project
 	# TODO might want to add support for paginization and pagetoken
 	# TODO change database to use psql or mysql
-	# TODO dockerize the project
 	# TODO Create a Postman collecion for authenticating
 	# TODO reenable authentication
 
