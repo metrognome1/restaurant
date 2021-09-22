@@ -2,35 +2,35 @@ require 'net/http'
 require 'json'
 
 class V1::ApiController < ApplicationController
-	before_action :authenticate_user!
+	# before_action :authenticate_user!
 
 	rescue_from Error::GoogleApiError, with: :render_server_unavailable
 	rescue_from Error::RequestParamsError, with: :render_bad_params
 
+	# TODO might want to add support for paginization and pagetoken
+	# TODO change database to use psql or mysql
+	# TODO dockerize the project
+	# TODO Create a Postman collecion for authenticating
+	# TODO reenable authentication
+
 	def	search
-
-		# TODO Decide which params are valid to send to Google
-		# TODO might want to add support for paginization and pagetoken
-		# TODO change database to use psql or mysql
-
 		result = query_google_places
-
 		render :json => result
 	end
 
 	def	photo_lookup
-		if !params.include?(:photo_reference)
-			raise Error::RequestParamsError
-		end
-
-
 		img_data = get_google_photo
-		send_data img_data.body, :filename => 'temp.jpg', :type => 'image/jpeg'
+		send_data img_data.body, :type => 'image/jpeg'
 	end
 
 	private
+		PLACES_FILTER_FIELDS = ["business_status", "formatted_address",
+				"formatted_phone_number", "geometry", "name", "opening_hours",
+				"photos", "plus_code", "price_level", "rating",
+				"user_ratings_total","website", "vicinity"]
+
 		def query_google_places
-			if !params.include?(:location)
+			if !(params.include?(:location) && params.include?(:radius))
 				raise Error::RequestParamsError
 			end
 
@@ -53,26 +53,61 @@ class V1::ApiController < ApplicationController
 			return processed_response
 		end
 
+		def get_google_photo
+			if !params.include?(:photo_reference)
+				raise Error::RequestParamsError
+			end
+
+			photos_endpoint = "https://maps.googleapis.com/maps/api/place/photo"
+			query_params = params.permit(:photo_reference, :maxwidth, :maxheight).to_h
+
+			# Give deafults for maxwidth and maxheight
+			if !query_params.include?(:maxwidth) && !query_params.include?(:maxheight)
+				query_params['maxwidth'] = 400
+				query_params['maxheight'] = 400
+			end
+
+			response = http_get_google_endpoint(photos_endpoint, query_params)
+			return response
+		end
+
+		def http_get_google_endpoint(url, query_params)
+			query_params['key'] = Rails.application.credentials.google[:places_api_key]
+
+			url = "#{url}?#{query_params.to_query}"
+			puts url
+
+			# Kludge to deal with redirects in the case of Places Photos
+			begin
+				response = Net::HTTP.get_response(URI.parse(url))
+				url = response['location']
+			end while response.is_a?(Net::HTTPRedirection)
+			response
+		end
+
 		def process_google_places_response(json_response)
-			hashed_response = JSON.parse(json_response)
-			puts hashed_response["status"]
-			filter_fields = ["business_status", "formatted_address",
-				 "formatted_phone_number", "geometry", "name", "opening_hours",
-				 "photos", "plus_code", "price_level", "rating",
-				 "user_ratings_total","website", "vicinity"]
-			if hashed_response['status'].downcase == 'ok'
-				filtered_response = hashed_response['results'].map { |result|
-					filtered_result = result.slice(*filter_fields)
-					filtered_result['photos'] = set_photo(filtered_result)
-					filtered_result
-				}
-			elsif hashed_response['status'].downcase != 'zero_results'
-				return []
+			response_hash = JSON.parse(json_response)
+			puts response_hash["status"]
+
+			if response_hash['status'].downcase == 'ok'
+				get_processed_results(response_hash)
+			elsif response_hash['status'].downcase == 'zero_results'
+				[]
+			elsif response_hash['status'].downcase == 'invalid_request'
+				raise Error::RequestParamsError
 			else
 				raise Error::GoogleApiError
 			end
+		end
 
-			return filtered_response
+		def get_processed_results(response_hash)
+			filtered_response = response_hash['results'].map { |result|
+				filtered_result = result.slice(*PLACES_FILTER_FIELDS)
+				filtered_result['photos'] = set_photo(filtered_result)
+				filtered_result
+			}
+
+			filtered_response
 		end
 
 		def set_photo(result)
@@ -80,23 +115,16 @@ class V1::ApiController < ApplicationController
 			# for more information on the 'photo_info' structure
 			if result.include?("photos")
 				result["photos"].map { |photo_info|
-
 					photo_url_params = photo_info.slice("photo_reference")
-					{"html_attributions": photo_info["html_attributions"], "photo_url": "#{v1_photo_lookup_url}?#{photo_url_params.to_query}"}
+
+					{
+						"html_attributions": photo_info["html_attributions"],
+						"photo_url": "#{v1_photo_lookup_url}?#{photo_url_params.to_query}"
+					}
 				}
 			else
 				{"html_attributions": [], "photo_url": ""}
 			end
-		end
-
-		def get_google_photo
-			photos_endpoint = "https://maps.googleapis.com/maps/api/place/photo"
-			query_params = params.permit(:photo_reference, :maxwidth, :maxheight).to_h
-			if !query_params.include?(:maxwidth) && !query_params.include?(:maxheight)
-				query_params['maxwidth'] = 400
-			end
-			response = http_get_google_endpoint(photos_endpoint, query_params)
-			return response
 		end
 
 		def render_server_unavailable
@@ -105,20 +133,5 @@ class V1::ApiController < ApplicationController
 
 		def render_bad_params
 			render json: { message: 'One or more parameters is not valid'}, status: :bad_request
-		end
-
-		def http_get_google_endpoint(url, query_params)
-			query_params['key'] = Rails.application.credentials.google[:places_api_key]
-
-			url = "#{url}?#{query_params.to_query}"
-			uri = URI(url)
-			puts uri
-
-			# Kludge to deal with redirects in the case Places Photos
-			begin
-				response = Net::HTTP.get_response(URI.parse(url))
-				url = response['location']
-			end while response.is_a?(Net::HTTPRedirection)
-			response
 		end
 end
