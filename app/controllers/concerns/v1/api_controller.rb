@@ -13,7 +13,6 @@ class V1::ApiController < ApplicationController
 		# TODO Decide which params are valid to send to Google
 		# TODO might want to add support for paginization and pagetoken
 		# TODO add OpenAPI for API
-		# TODO store secrets/API keys outside of source control
 
 		result = query_google_places
 
@@ -111,6 +110,7 @@ class V1::ApiController < ApplicationController
 		end
 
 		def http_get_google_endpoint(url, query_params)
+			query_params['key'] = Rails.application.credentials.google[:places_api_key]
 
 			url = "#{url}?#{query_params.to_query}"
 			uri = URI(url)
