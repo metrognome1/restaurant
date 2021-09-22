@@ -2,17 +2,16 @@ require 'net/http'
 require 'json'
 
 class V1::ApiController < ApplicationController
-	# include Error:ErrorHandler
+	before_action :authenticate_user!
+
 	rescue_from Error::GoogleApiError, with: :render_server_unavailable
 	rescue_from Error::RequestParamsError, with: :render_bad_params
 
 	def	search
-		# TODO Give user option to specify which kind of search to do.
 
-		# TODO See if the OmniAuth gem can make token auth easier
 		# TODO Decide which params are valid to send to Google
 		# TODO might want to add support for paginization and pagetoken
-		# TODO add OpenAPI for API
+		# TODO change database to use psql or mysql
 
 		result = query_google_places
 
@@ -36,7 +35,6 @@ class V1::ApiController < ApplicationController
 			end
 
 			search_type = 'nearbysearch'
-			#TODO add support for photo sizes using the Google Place photos endpoint?
 
 			if params.include?(:query)
 				search_type = 'textsearch'
