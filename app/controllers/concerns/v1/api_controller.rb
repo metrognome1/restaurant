@@ -2,16 +2,12 @@ require 'net/http'
 require 'json'
 
 class V1::ApiController < ApplicationController
-	# before_action :authenticate_user!
+	before_action :authenticate_user!
 
 	rescue_from Error::GoogleApiError, with: :render_server_unavailable
 	rescue_from Error::RequestParamsError, with: :render_bad_params
 
-	# TODO dockerize the project
-	# TODO might want to add support for paginization and pagetoken
-	# TODO change database to use psql or mysql
-	# TODO Create a Postman collecion for authenticating
-	# TODO reenable authentication
+	# TODO might want to add support for paginization and pagetoken in the future
 
 	def	search
 		result = query_google_places
@@ -61,7 +57,7 @@ class V1::ApiController < ApplicationController
 			photos_endpoint = "https://maps.googleapis.com/maps/api/place/photo"
 			query_params = params.permit(:photo_reference, :maxwidth, :maxheight).to_h
 
-			# Give deafults for maxwidth and maxheight
+			# Give defaults for maxwidth and maxheight
 			if !query_params.include?(:maxwidth) && !query_params.include?(:maxheight)
 				query_params['maxwidth'] = 400
 				query_params['maxheight'] = 400
